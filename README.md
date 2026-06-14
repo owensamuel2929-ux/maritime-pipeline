@@ -40,6 +40,20 @@ VesselAPI (live data)
 | VesselAPI Python SDK | 1.3.0 | Live Rotterdam port data |
 | Python | 3.11 | Extract, load, dashboard |
 | Docker Compose | — | Full stack containerisation |
+| python-telegram-bot | 21.1 | Interactive Telegram alert bot |
+
+---
+
+## Telegram Bot
+
+A Telegram bot is included for interactive reporting and alerts.
+
+- `/start` opens the menu with buttons for:
+  - `📊 Get Report`
+  - `🔄 Refresh`
+  - `🚨 Alert Status`
+- The `🏠 Back` button now returns to the main menu reliably.
+- The bot reads the latest transformed data from Postgres and shows current port congestion, arrivals, and traffic patterns.
 
 ---
 
