@@ -10,50 +10,80 @@ A production-style data engineering portfolio project that monitors live vessel 
 VesselAPI (live data)
        │
        ▼
-  Apache Airflow          ← orchestrates the pipeline every 6 hours
+  Apache Airflow          ← orchestrates every 6 hours
+       │  incremental fetch — only events newer than last run
+       ▼
+  PostgreSQL (raw)        ← raw.port_events (deduped), raw.vessel_positions (snapshot)
        │
        ▼
-  PostgreSQL (raw)        ← raw.port_events, raw.vessel_positions
+  dbt staging             ← filters nulls, future timestamps, out-of-bounds positions
        │
        ▼
-     dbt                  ← staging + mart transformations
+  dbt marts               ← business-ready tables
        │
        ▼
-  PostgreSQL (marts)      ← mart_vessels_in_port, mart_port_congestion, etc.
+  dbt test (28 tests)     ← error severity on critical fields, warn on nullable fields
        │
        ▼
-  HTML Dashboard          ← Leaflet map + Chart.js visualizations
+  HTML Dashboard          ← Leaflet vessel map + Chart.js + KPI cards
 ```
+
+---
 
 ## Stack
 
-| Tool | Purpose |
-|---|---|
-| Apache Airflow 2.9 | Pipeline orchestration (every 6 hours) |
-| PostgreSQL 15 | Data storage (raw + transformed) |
-| dbt 1.7 | SQL transformations (staging → marts) |
-| VesselAPI SDK | Live Rotterdam port data |
-| Docker Compose | Full stack containerisation |
-| Python 3.11 | Extract + load scripts |
+| Tool | Version | Purpose |
+|---|---|---|
+| Apache Airflow | 2.9.0 | Pipeline orchestration |
+| PostgreSQL | 15 | Data storage (raw + transformed) |
+| dbt | 1.7.17 | SQL transformations + data validation |
+| VesselAPI Python SDK | 1.3.0 | Live Rotterdam port data |
+| Python | 3.11 | Extract, load, dashboard |
+| Docker Compose | — | Full stack containerisation |
 
 ---
 
 ## Data Flow
 
-### Extract
-- **Port events** — arrivals and departures at Rotterdam (NLRTM), paginated with `time_from` / `time_to`
-- **Vessel positions** — live GPS coordinates, speed, heading per MMSI
-- **Vessel emissions** — CO₂ and fuel data (when available)
+### Extract (Incremental)
+Each run uses the last stored event timestamp as `time_from` — only new events are fetched from the API, not the full history every time.
+
+- **Port events** — arrivals + departures at Rotterdam (NLRTM), paginated
+- **Vessel positions** — live GPS per MMSI (replaced each run — latest snapshot only)
+- **Vessel emissions** — CO₂ / fuel data when available
 
 ### Transform (dbt)
-| Model | Schema | Description |
-|---|---|---|
-| `stg_port_events` | dbt_staging | Cleaned port events with typed timestamps |
-| `stg_vessel_positions` | dbt_staging | Filtered positions (lat/lon not null) |
-| `mart_vessels_in_port` | dbt_marts | Vessels + GPS positions joined — map-ready |
-| `mart_port_congestion` | dbt_marts | Daily arrivals, departures, congestion level |
-| `mart_hourly_arrivals` | dbt_marts | Traffic pattern by hour of day |
-| `mart_carrier_performance` | dbt_marts | Per-vessel event activity summary |
+
+| Model | Schema | Rows | Description |
+|---|---|---|---|
+| `stg_port_events` | dbt_staging | view | Cleaned events — nulls + future timestamps filtered out |
+| `stg_vessel_positions` | dbt_staging | view | Positions filtered to Rotterdam bounding box |
+| `mart_vessels_in_port` | dbt_marts | 60 | Vessel name + live GPS — map-ready |
+| `mart_port_congestion` | dbt_marts | — | Daily arrivals, departures, congestion level |
+| `mart_hourly_arrivals` | dbt_marts | — | Traffic pattern by hour of day |
+| `mart_carrier_performance` | dbt_marts | — | Per-vessel event activity summary |
+
+### Validate (28 dbt tests)
+
+Two-layer approach:
+1. **Staging filters** — bad rows (null MMSI, future timestamps, out-of-bounds GPS) never reach marts
+2. **Schema tests with severity** — `error` stops the DAG; `warn` logs and continues
+
+| Severity | Fields |
+|---|---|
+| `error` | mmsi, event_type, event_timestamp, lat/lon, congestion_level |
+| `warn` | imo, speed, heading (legitimately null for anchored vessels) |
+
+---
+
+## Cost Controls
+
+| Problem | Solution |
+|---|---|
+| API re-fetches data already in DB | Incremental fetch using last stored timestamp as `time_from` |
+| Duplicate rows accumulating in `port_events` | Dedup on `(mmsi, timestamp, event_type)` before insert |
+| `vessel_positions` growing unbounded | `if_exists="replace"` — latest snapshot only |
+| API quota exceeded breaks entire DAG | 429 errors caught — dbt still runs on existing data |
 
 ---
 
@@ -76,9 +106,9 @@ cp .env.example .env
 docker compose up -d
 ```
 
-> **Note:** If you already have PostgreSQL running locally on port 5432, the Docker postgres is mapped to **5433** to avoid conflicts.
+> If you have PostgreSQL running locally on port 5432, Docker postgres is mapped to **5433**.
 
-### 4. Access the services
+### 4. Access services
 
 | Service | URL | Credentials |
 |---|---|---|
@@ -86,15 +116,27 @@ docker compose up -d
 | PostgreSQL | localhost:5433 | see .env |
 
 ### 5. Trigger the pipeline
-1. Open Airflow at http://localhost:8080
-2. Enable the `maritime_pipeline` DAG (toggle on)
-3. Click the **▶** play button to trigger a manual run
+1. Open Airflow → enable `maritime_pipeline` DAG
+2. Click **▶** to trigger a manual run
+3. All 6 tasks should go green: extract × 3 → dbt_staging → dbt_marts → dbt_test
 
-### 6. Generate the dashboard
+### 6. Run dbt manually
+```bash
+docker exec <airflow-scheduler-id> bash -c \
+  "dbt run --project-dir /opt/dbt/maritime --profiles-dir /opt/dbt/maritime"
+```
+
+### 7. Run dbt tests manually
+```bash
+docker exec <airflow-scheduler-id> bash -c \
+  "dbt test --project-dir /opt/dbt/maritime --profiles-dir /opt/dbt/maritime"
+```
+
+### 8. Generate the dashboard
 ```bash
 docker exec <airflow-scheduler-id> python3 src/dashboard.py
+# opens dashboard.html in your project folder
 ```
-Then open `dashboard.html` in your browser.
 
 ---
 
@@ -102,21 +144,29 @@ Then open `dashboard.html` in your browser.
 
 ```
 ├── dags/
-│   └── maritime_dag.py          # Airflow DAG definition
+│   └── maritime_dag.py              # Airflow DAG — 6 tasks, XCom, quota handling
 ├── src/
-│   ├── extract.py               # VesselAPI data extraction
-│   ├── load.py                  # PostgreSQL loader
-│   ├── dashboard.py             # HTML dashboard generator
-│   └── notify.py                # Telegram alerts (optional)
+│   ├── extract.py                   # Incremental VesselAPI fetch with pagination
+│   ├── load.py                      # Dedup insert + snapshot replace
+│   ├── dashboard.py                 # Standalone HTML dashboard generator
+│   └── notify.py                    # Telegram alerts (optional)
 ├── dbt/
 │   └── maritime/
 │       ├── models/
-│       │   ├── staging/         # stg_port_events, stg_vessel_positions
-│       │   └── marts/           # mart_* business-ready tables
+│       │   ├── staging/
+│       │   │   ├── schema.yml       # Staging tests (error + warn severity)
+│       │   │   ├── stg_port_events.sql
+│       │   │   └── stg_vessel_positions.sql
+│       │   └── marts/
+│       │       ├── schema.yml       # Mart tests (error + warn severity)
+│       │       ├── mart_vessels_in_port.sql
+│       │       ├── mart_port_congestion.sql
+│       │       ├── mart_hourly_arrivals.sql
+│       │       └── mart_carrier_performance.sql
 │       └── profiles.yml
 ├── init/
-│   └── 01_init.sql              # Creates raw schema + airflow/metabase DBs
-├── Dockerfile                   # Airflow + dbt + VesselAPI image
+│   └── 01_init.sql                  # Creates raw schema on first postgres start
+├── Dockerfile                       # Airflow + dbt + VesselAPI image
 ├── docker-compose.yml
 ├── requirements.txt
 └── .env.example
@@ -124,16 +174,17 @@ Then open `dashboard.html` in your browser.
 
 ---
 
-## Dashboard Preview
+## Dashboard
 
-The generated `dashboard.html` includes:
-- **KPI cards** — vessels in port, arrivals, departures, congestion level
-- **Interactive map** — all vessels plotted on Rotterdam with click popups
-- **Hourly traffic chart** — when the port is busiest
+`dashboard.html` is generated from live mart data — no extra Docker image needed.
+
+- **KPI cards** — vessels in port, arrivals, departures, congestion level (color-coded)
+- **Interactive map** — all vessels on Rotterdam with click popups (Leaflet.js)
+- **Hourly traffic chart** — when the port is busiest (Chart.js)
 - **Vessel activity table** — per-vessel event log
 
 ---
 
 ## API Quota Note
 
-VesselAPI free plans have a monthly call limit. If the pipeline hits the quota, the extract tasks log a warning and skip gracefully — dbt still runs on existing data, keeping the marts up to date.
+VesselAPI free plans have a monthly call limit. When quota is exceeded the extract tasks log a warning and return empty — dbt still runs and rebuilds marts from existing data. The pipeline never fully breaks.
