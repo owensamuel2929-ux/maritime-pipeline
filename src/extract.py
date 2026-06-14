@@ -2,15 +2,26 @@ import os
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 from vessel_api_python import VesselClient
+from src.load import get_last_event_timestamp
 
 client = VesselClient(api_key=os.getenv("VESSEL_API_KEY"))
 
 
 def fetch_port_events(port_code="NLRTM", days_back=30):
-    """Fetch arrivals + departures for the past N days, paginating through all results."""
+    """Fetch arrivals + departures. Uses last ingested timestamp as time_from
+    so each run only pulls events newer than what's already in the database."""
     all_records = []
     now = datetime.now(timezone.utc)
-    time_from = (now - timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Incremental: start from last known event, else fall back to days_back
+    last_ts = get_last_event_timestamp()
+    if last_ts:
+        time_from = last_ts
+        print(f"Incremental fetch: pulling events after {time_from}")
+    else:
+        time_from = (now - timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        print(f"Full fetch: pulling last {days_back} days from {time_from}")
+
     time_to = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     for event_type in ["arrival", "departure"]:
