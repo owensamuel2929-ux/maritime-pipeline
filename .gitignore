@@ -1,0 +1,29 @@
+# Secrets
+.env
+
+# PostgreSQL data (large binary, stays local)
+postgres-data/
+
+# Grafana data
+grafana-data/
+
+# Airflow logs
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# dbt compiled output
+dbt/maritime/target/
+dbt/maritime/dbt_packages/
+dbt/maritime/logs/
+
+# Generated files
+dashboard.html
+
+# OS
+.DS_Store
+Thumbs.db

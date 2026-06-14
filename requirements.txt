@@ -1,0 +1,7 @@
+vessel-api-python
+pandas
+psycopg2-binary
+sqlalchemy
+dbt-postgres==1.7.17
+requests
+apache-airflow-providers-postgres

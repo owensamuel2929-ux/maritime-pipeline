@@ -1,0 +1,26 @@
+models:
+  - name: mart_port_congestion
+    columns:
+      - name: event_date
+        tests:
+          - not_null
+      - name: congestion_level
+        tests:
+          - accepted_values:
+              values: ['HIGH', 'MEDIUM', 'LOW']
+
+  - name: mart_carrier_performance
+    columns:
+      - name: on_time_rate_pct
+        tests:
+          - not_null
+
+  - name: mart_carbon_footprint
+    columns:
+      - name: emissions_grade
+        tests:
+          - accepted_values:
+              values: ['EXCELLENT', 'GOOD', 'AVERAGE', 'HIGH_EMITTER']
+      - name: co2_total
+        tests:
+          - not_null
