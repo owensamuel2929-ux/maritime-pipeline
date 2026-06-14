@@ -1,0 +1,68 @@
+version: 2
+
+models:
+
+  - name: mart_port_congestion
+    columns:
+      - name: event_date
+        tests:
+          - not_null:
+              severity: error
+          - unique:
+              severity: error
+      - name: congestion_level
+        tests:
+          - not_null:
+              severity: error
+          - accepted_values:
+              values: ['HIGH', 'MEDIUM', 'LOW']
+              severity: error
+      - name: arrivals
+        tests:
+          - not_null:
+              severity: error
+
+  - name: mart_vessels_in_port
+    columns:
+      - name: mmsi
+        tests:
+          - not_null:
+              severity: error
+      - name: latitude
+        tests:
+          - not_null:
+              severity: error
+      - name: longitude
+        tests:
+          - not_null:
+              severity: error
+      - name: vessel_name
+        tests:
+          - not_null:
+              severity: warn
+
+  - name: mart_hourly_arrivals
+    columns:
+      - name: event_hour
+        tests:
+          - not_null:
+              severity: error
+          - unique:
+              severity: error
+      - name: vessel_count
+        tests:
+          - not_null:
+              severity: error
+
+  - name: mart_carrier_performance
+    columns:
+      - name: mmsi
+        tests:
+          - not_null:
+              severity: error
+          - unique:
+              severity: error
+      - name: total_events
+        tests:
+          - not_null:
+              severity: error

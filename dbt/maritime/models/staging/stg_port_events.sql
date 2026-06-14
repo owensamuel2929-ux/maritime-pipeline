@@ -12,4 +12,7 @@ SELECT
     ingested_at
 FROM raw.port_events
 WHERE port_unlocode = 'NLRTM'
+  AND mmsi IS NOT NULL
+  AND event_type IS NOT NULL
   AND timestamp IS NOT NULL
+  AND "timestamp"::timestamptz <= NOW()

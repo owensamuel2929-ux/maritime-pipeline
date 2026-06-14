@@ -1,26 +1,127 @@
 models:
+
+  # ── Staging: port events ────────────────────────────────────────────────
+  - name: stg_port_events
+    columns:
+      - name: mmsi
+        tests:
+          - not_null:
+              severity: error        # hard fail — no MMSI = useless row
+      - name: event_type
+        tests:
+          - not_null:
+              severity: error
+          - accepted_values:
+              values: ['Arrival', 'Departure']
+              severity: error
+      - name: event_timestamp
+        tests:
+          - not_null:
+              severity: error
+      - name: port_unlocode
+        tests:
+          - not_null:
+              severity: error
+      - name: vessel_name
+        tests:
+          - not_null:
+              severity: warn         # warn only — some vessels omit names
+      - name: imo
+        tests:
+          - not_null:
+              severity: warn         # warn only — not all vessels have IMO
+
+  # ── Staging: vessel positions ───────────────────────────────────────────
+  - name: stg_vessel_positions
+    columns:
+      - name: mmsi
+        tests:
+          - not_null:
+              severity: error
+          - unique:
+              severity: warn         # warn if duplicate position snapshots
+      - name: latitude
+        tests:
+          - not_null:
+              severity: error
+      - name: longitude
+        tests:
+          - not_null:
+              severity: error
+      - name: speed
+        tests:
+          - not_null:
+              severity: warn         # often null for anchored vessels
+      - name: heading
+        tests:
+          - not_null:
+              severity: warn
+
+  # ── Mart: port congestion ───────────────────────────────────────────────
   - name: mart_port_congestion
     columns:
       - name: event_date
         tests:
-          - not_null
+          - not_null:
+              severity: error
+          - unique:
+              severity: error
       - name: congestion_level
         tests:
+          - not_null:
+              severity: error
           - accepted_values:
               values: ['HIGH', 'MEDIUM', 'LOW']
+              severity: error
+      - name: arrivals
+        tests:
+          - not_null:
+              severity: error
 
+  # ── Mart: vessels in port ───────────────────────────────────────────────
+  - name: mart_vessels_in_port
+    columns:
+      - name: mmsi
+        tests:
+          - not_null:
+              severity: error
+      - name: latitude
+        tests:
+          - not_null:
+              severity: error
+      - name: longitude
+        tests:
+          - not_null:
+              severity: error
+      - name: vessel_name
+        tests:
+          - not_null:
+              severity: warn
+
+  # ── Mart: hourly arrivals ───────────────────────────────────────────────
+  - name: mart_hourly_arrivals
+    columns:
+      - name: event_hour
+        tests:
+          - not_null:
+              severity: error
+          - unique:
+              severity: error
+      - name: vessel_count
+        tests:
+          - not_null:
+              severity: error
+
+  # ── Mart: carrier performance ───────────────────────────────────────────
   - name: mart_carrier_performance
     columns:
-      - name: on_time_rate_pct
+      - name: mmsi
         tests:
-          - not_null
-
-  - name: mart_carbon_footprint
-    columns:
-      - name: emissions_grade
+          - not_null:
+              severity: error
+          - unique:
+              severity: error
+      - name: total_events
         tests:
-          - accepted_values:
-              values: ['EXCELLENT', 'GOOD', 'AVERAGE', 'HIGH_EMITTER']
-      - name: co2_total
-        tests:
-          - not_null
+          - not_null:
+              severity: error

@@ -1,0 +1,58 @@
+version: 2
+
+models:
+
+  - name: stg_port_events
+    columns:
+      - name: mmsi
+        tests:
+          - not_null:
+              severity: error
+      - name: event_type
+        tests:
+          - not_null:
+              severity: error
+          - accepted_values:
+              values: ['Arrival', 'Departure']
+              severity: error
+      - name: event_timestamp
+        tests:
+          - not_null:
+              severity: error
+      - name: port_unlocode
+        tests:
+          - not_null:
+              severity: error
+      - name: vessel_name
+        tests:
+          - not_null:
+              severity: warn
+      - name: imo
+        tests:
+          - not_null:
+              severity: warn
+
+  - name: stg_vessel_positions
+    columns:
+      - name: mmsi
+        tests:
+          - not_null:
+              severity: error
+          - unique:
+              severity: warn
+      - name: latitude
+        tests:
+          - not_null:
+              severity: error
+      - name: longitude
+        tests:
+          - not_null:
+              severity: error
+      - name: speed
+        tests:
+          - not_null:
+              severity: warn
+      - name: heading
+        tests:
+          - not_null:
+              severity: warn
